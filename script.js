@@ -19,10 +19,14 @@
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
       var parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed.map(withRating) : [];
+      return Array.isArray(parsed) ? parsed.map(normalize) : [];
     } catch (err) {
       return [];
     }
+  }
+
+  function normalize(prompt) {
+    return withNotes(withRating(prompt));
   }
 
   /* Prompts saved before ratings existed have no `rating` — read them as 0
@@ -32,6 +36,17 @@
     if (!(rating >= 1 && rating <= MAX_RATING)) rating = 0;
     prompt.rating = rating;
     return prompt;
+  }
+
+  /* Same idea for notes: an older prompt without a `notes` array reads as one
+     with no notes. */
+  function withNotes(prompt) {
+    if (!Array.isArray(prompt.notes)) prompt.notes = [];
+    return prompt;
+  }
+
+  function makeId() {
+    return String(Date.now()) + String(Math.random()).slice(2, 8);
   }
 
   function savePrompts(prompts) {
@@ -133,6 +148,147 @@
     wrap.querySelectorAll('.star')[next > 0 ? next - 1 : 0].focus();
   }
 
+  /* ---------- Notes ---------- */
+
+  function createNotes(prompt) {
+    var section = document.createElement('section');
+    section.className = 'notes';
+    section.setAttribute('aria-label', 'Notes');
+    section.setAttribute('data-prompt-id', prompt.id);
+
+    var list = document.createElement('ul');
+    list.className = 'note-list';
+
+    section.appendChild(list);
+    section.appendChild(createNoteForm(prompt, list));
+    renderNotes(prompt, list);
+    return section;
+  }
+
+  function renderNotes(prompt, list) {
+    list.innerHTML = '';
+    prompt.notes.forEach(function (note) {
+      list.appendChild(createNote(prompt, note, list));
+    });
+  }
+
+  function createNote(prompt, note, list) {
+    var item = document.createElement('li');
+    item.className = 'note';
+    item.setAttribute('data-note-id', note.id);
+
+    var text = document.createElement('p');
+    text.className = 'note-text';
+    text.textContent = note.text;
+
+    var time = document.createElement('time');
+    time.className = 'note-time';
+    time.dateTime = new Date(note.updatedAt).toISOString();
+    time.textContent = new Date(note.updatedAt).toLocaleString();
+
+    var editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'note-btn';
+    editBtn.textContent = 'Edit';
+    editBtn.setAttribute('aria-label', 'Edit note');
+    editBtn.addEventListener('click', function () {
+      startEdit(prompt, note, item, list);
+    });
+
+    var deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'note-btn';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.setAttribute('aria-label', 'Delete note');
+    deleteBtn.addEventListener('click', function () {
+      if (window.confirm('Delete this note?')) deleteNote(prompt, note.id, list);
+    });
+
+    var actions = document.createElement('div');
+    actions.className = 'note-actions';
+    actions.appendChild(time);
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+
+    item.appendChild(text);
+    item.appendChild(actions);
+    return item;
+  }
+
+  /* Swaps the note for an editor in place. Cancel just re-renders the list, so
+     the note comes back from storage unchanged. */
+  function startEdit(prompt, note, item, list) {
+    var form = document.createElement('form');
+    form.className = 'note-edit';
+
+    var input = document.createElement('textarea');
+    input.className = 'note-input';
+    input.rows = 2;
+    input.value = note.text;
+    input.setAttribute('aria-label', 'Edit note');
+
+    var saveBtn = document.createElement('button');
+    saveBtn.type = 'submit';
+    saveBtn.className = 'note-btn';
+    saveBtn.textContent = 'Save';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'note-btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', function () {
+      renderNotes(prompt, list);
+    });
+
+    var actions = document.createElement('div');
+    actions.className = 'note-actions';
+    actions.appendChild(saveBtn);
+    actions.appendChild(cancelBtn);
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var text = input.value.trim();
+      if (!text) return;
+      updateNote(prompt, note, text, list);
+    });
+
+    form.appendChild(input);
+    form.appendChild(actions);
+
+    item.innerHTML = '';
+    item.appendChild(form);
+    input.focus();
+  }
+
+  function createNoteForm(prompt, list) {
+    var form = document.createElement('form');
+    form.className = 'note-form';
+
+    var input = document.createElement('textarea');
+    input.className = 'note-input';
+    input.rows = 2;
+    input.placeholder = 'Add a note...';
+    input.setAttribute('aria-label', 'New note');
+
+    var addBtn = document.createElement('button');
+    addBtn.type = 'submit';
+    addBtn.className = 'note-btn';
+    addBtn.textContent = 'Add Note';
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var text = input.value.trim();
+      if (!text) return;
+      addNote(prompt, text, list);
+      form.reset();
+      input.focus();
+    });
+
+    form.appendChild(input);
+    form.appendChild(addBtn);
+    return form;
+  }
+
   function createCard(prompt) {
     var card = document.createElement('article');
     card.className = 'prompt-card';
@@ -155,6 +311,7 @@
     card.appendChild(title);
     card.appendChild(preview);
     card.appendChild(createRating(prompt));
+    card.appendChild(createNotes(prompt));
     card.appendChild(deleteBtn);
     return card;
   }
@@ -174,10 +331,11 @@
   function addPrompt(title, content) {
     var prompts = loadPrompts();
     prompts.unshift({
-      id: String(Date.now()) + String(Math.random()).slice(2, 8),
+      id: makeId(),
       title: title,
       content: content,
-      rating: 0
+      rating: 0,
+      notes: []
     });
     savePrompts(prompts);
     render();
@@ -198,6 +356,42 @@
     }
 
     syncRating(wrap, rating);
+  }
+
+  function addNote(prompt, text, list) {
+    var now = Date.now();
+    prompt.notes.push({ id: makeId(), text: text, createdAt: now, updatedAt: now });
+    saveNotes(prompt);
+    renderNotes(prompt, list);
+  }
+
+  function updateNote(prompt, note, text, list) {
+    note.text = text;
+    note.updatedAt = Date.now();
+    saveNotes(prompt);
+    renderNotes(prompt, list);
+  }
+
+  function deleteNote(prompt, id, list) {
+    prompt.notes = prompt.notes.filter(function (note) {
+      return note.id !== id;
+    });
+    saveNotes(prompt);
+    renderNotes(prompt, list);
+  }
+
+  /* Notes belong to one prompt, so a change rewrites only that prompt's entry
+     and re-renders its list — a full render() would tear down open editors on
+     every other card. */
+  function saveNotes(prompt) {
+    var prompts = loadPrompts();
+    for (var i = 0; i < prompts.length; i++) {
+      if (prompts[i].id === prompt.id) {
+        prompts[i].notes = prompt.notes;
+        savePrompts(prompts);
+        break;
+      }
+    }
   }
 
   function deletePrompt(id) {
