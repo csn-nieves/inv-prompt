@@ -4,6 +4,7 @@
   var STORAGE_KEY = 'prompts';
   var THEME_KEY = 'theme';
   var PREVIEW_WORDS = 12;
+  var MAX_RATING = 5;
 
   var form = document.getElementById('prompt-form');
   var titleInput = document.getElementById('prompt-title');
@@ -18,10 +19,19 @@
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
       var parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? parsed.map(withRating) : [];
     } catch (err) {
       return [];
     }
+  }
+
+  /* Prompts saved before ratings existed have no `rating` — read them as 0
+     rather than migrating storage. */
+  function withRating(prompt) {
+    var rating = Math.round(prompt.rating);
+    if (!(rating >= 1 && rating <= MAX_RATING)) rating = 0;
+    prompt.rating = rating;
+    return prompt;
   }
 
   function savePrompts(prompts) {
@@ -34,6 +44,93 @@
     var words = content.trim().split(/\s+/);
     if (words.length <= PREVIEW_WORDS) return words.join(' ');
     return words.slice(0, PREVIEW_WORDS).join(' ') + '...';
+  }
+
+  /* ---------- Rating ---------- */
+
+  function createStar(prompt, value, wrap) {
+    var star = document.createElement('button');
+    star.type = 'button';
+    star.className = 'star';
+    star.setAttribute('role', 'radio');
+    star.setAttribute('aria-label', value + (value === 1 ? ' star' : ' stars'));
+
+    star.addEventListener('click', function () {
+      setRating(prompt, prompt.rating === value ? 0 : value, wrap);
+    });
+    star.addEventListener('mouseenter', function () {
+      paintStars(wrap, value);
+    });
+
+    return star;
+  }
+
+  function createRating(prompt) {
+    var wrap = document.createElement('div');
+    wrap.className = 'rating';
+    wrap.setAttribute('role', 'radiogroup');
+    wrap.setAttribute('aria-label', 'Rate this prompt');
+
+    for (var value = 1; value <= MAX_RATING; value++) {
+      wrap.appendChild(createStar(prompt, value, wrap));
+    }
+
+    wrap.addEventListener('mouseleave', function () {
+      paintStars(wrap, prompt.rating);
+    });
+    wrap.addEventListener('keydown', function (event) {
+      handleRatingKeys(event, prompt, wrap);
+    });
+
+    syncRating(wrap, prompt.rating);
+    return wrap;
+  }
+
+  /* Fill stars up to `upTo` — used for hover preview and for reverting. */
+  function paintStars(wrap, upTo) {
+    var stars = wrap.querySelectorAll('.star');
+    for (var i = 0; i < stars.length; i++) {
+      var filled = i + 1 <= upTo;
+      stars[i].classList.toggle('star-filled', filled);
+      stars[i].textContent = filled ? '\u2605' : '\u2606';
+    }
+  }
+
+  /* Reflect the stored rating: fill, checked state and roving tabindex. */
+  function syncRating(wrap, rating) {
+    paintStars(wrap, rating);
+    var stars = wrap.querySelectorAll('.star');
+    for (var i = 0; i < stars.length; i++) {
+      var value = i + 1;
+      stars[i].setAttribute('aria-checked', String(value === rating));
+      stars[i].tabIndex = (value === rating || (rating === 0 && value === 1)) ? 0 : -1;
+    }
+  }
+
+  function handleRatingKeys(event, prompt, wrap) {
+    var next;
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowUp':
+        next = Math.min(MAX_RATING, prompt.rating + 1);
+        break;
+      case 'ArrowLeft':
+      case 'ArrowDown':
+        next = Math.max(0, prompt.rating - 1);
+        break;
+      case 'Home':
+        next = 1;
+        break;
+      case 'End':
+        next = MAX_RATING;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    setRating(prompt, next, wrap);
+    wrap.querySelectorAll('.star')[next > 0 ? next - 1 : 0].focus();
   }
 
   function createCard(prompt) {
@@ -57,6 +154,7 @@
 
     card.appendChild(title);
     card.appendChild(preview);
+    card.appendChild(createRating(prompt));
     card.appendChild(deleteBtn);
     return card;
   }
@@ -78,10 +176,28 @@
     prompts.unshift({
       id: String(Date.now()) + String(Math.random()).slice(2, 8),
       title: title,
-      content: content
+      content: content,
+      rating: 0
     });
     savePrompts(prompts);
     render();
+  }
+
+  /* Updates the card in place — a full render() would tear down the star the
+     user is hovering or has focused. */
+  function setRating(prompt, rating, wrap) {
+    prompt.rating = rating;
+
+    var prompts = loadPrompts();
+    for (var i = 0; i < prompts.length; i++) {
+      if (prompts[i].id === prompt.id) {
+        prompts[i].rating = rating;
+        savePrompts(prompts);
+        break;
+      }
+    }
+
+    syncRating(wrap, rating);
   }
 
   function deletePrompt(id) {
