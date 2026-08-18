@@ -2,7 +2,13 @@
   'use strict';
 
   var STORAGE_KEY = 'prompts';
+  var BACKUP_KEY = 'prompts.backup';
   var THEME_KEY = 'theme';
+
+  /* Written into every export and checked on every import. Bump it only when
+     the shape of an export file changes; older files stay readable. */
+  var SCHEMA_VERSION = 1;
+  var APP_ID = 'prompt-library';
   var PREVIEW_WORDS = 12;
   var MAX_RATING = 5;
   var MAX_MODEL_LENGTH = 100;
@@ -27,6 +33,15 @@
   var listEl = document.getElementById('prompt-list');
   var emptyEl = document.getElementById('empty-state');
   var themeToggle = document.getElementById('theme-toggle');
+  var exportBtn = document.getElementById('export-btn');
+  var importBtn = document.getElementById('import-btn');
+  var importFile = document.getElementById('import-file');
+  var statusEl = document.getElementById('library-status');
+  var importDialog = document.getElementById('import-dialog');
+  var dialogSummary = document.getElementById('import-dialog-summary');
+  var keepMineBtn = document.getElementById('merge-keep-existing');
+  var useTheirsBtn = document.getElementById('merge-keep-imported');
+  var dialogForm = document.getElementById('import-dialog-form');
 
   /* ---------- Storage ---------- */
 
@@ -727,6 +742,479 @@
     titleInput.focus();
   });
 
+  /* ---------- Statistics ---------- */
+
+  function ratedPrompts(prompts) {
+    return prompts.filter(function (prompt) {
+      return prompt.rating > 0;
+    });
+  }
+
+  /* Unrated prompts are excluded rather than counted as zero, which would drag
+     the average down for prompts nobody has judged yet. */
+  function averageRating(prompts) {
+    var rated = ratedPrompts(prompts);
+    if (!rated.length) return 0;
+
+    var total = rated.reduce(function (sum, prompt) {
+      return sum + prompt.rating;
+    }, 0);
+
+    return Math.round((total / rated.length) * 10) / 10;
+  }
+
+  /* A bare object would inherit `constructor` and friends, and a prompt whose
+     model is literally named "constructor" would then count as pre-existing. */
+  function tally(values) {
+    var counts = Object.create(null);
+    values.forEach(function (value) {
+      counts[value] = (counts[value] || 0) + 1;
+    });
+    return counts;
+  }
+
+  /* Ties break alphabetically, so the same library always exports the same
+     statistics. */
+  function mostUsedModel(prompts) {
+    if (!prompts.length) return null;
+
+    var counts = tally(prompts.map(function (prompt) {
+      return prompt.metadata.model;
+    }));
+
+    return Object.keys(counts).sort().reduce(function (best, model) {
+      return best === null || counts[model] > counts[best] ? model : best;
+    }, null);
+  }
+
+  function statistics(prompts) {
+    return {
+      totalPrompts: prompts.length,
+      ratedPrompts: ratedPrompts(prompts).length,
+      averageRating: averageRating(prompts),
+      mostUsedModel: mostUsedModel(prompts)
+    };
+  }
+
+  /* ---------- Integrity checks ---------- */
+
+  function requireNonEmptyString(value, label) {
+    if (typeof value !== 'string') {
+      throw new TypeError(label + ' must be a string, received ' + describe(value) + '.');
+    }
+    if (!value.trim()) throw new Error(label + ' must not be empty.');
+    return value;
+  }
+
+  function validateNote(note, at) {
+    if (!note || typeof note !== 'object' || Array.isArray(note)) {
+      throw new TypeError(at + ' must be an object.');
+    }
+    requireNonEmptyString(note.id, at + '.id');
+    if (typeof note.text !== 'string') {
+      throw new TypeError(at + '.text must be a string, received ' + describe(note.text) + '.');
+    }
+    ['createdAt', 'updatedAt'].forEach(function (field) {
+      if (typeof note[field] !== 'number' || !isFinite(note[field])) {
+        throw new TypeError(at + '.' + field + ' must be a timestamp in milliseconds, received ' +
+          describe(note[field]) + '.');
+      }
+    });
+  }
+
+  /* Every error names the record it came from, so a rejected file points at the
+     entry to fix rather than just failing. */
+  function validatePromptRecord(prompt, index) {
+    var at = 'prompts[' + index + ']';
+
+    if (!prompt || typeof prompt !== 'object' || Array.isArray(prompt)) {
+      throw new TypeError(at + ' must be an object, received ' + describe(prompt) + '.');
+    }
+
+    requireNonEmptyString(prompt.id, at + '.id');
+    requireNonEmptyString(prompt.title, at + '.title');
+    requireNonEmptyString(prompt.content, at + '.content');
+
+    if (typeof prompt.rating !== 'number' || prompt.rating !== Math.round(prompt.rating) ||
+        prompt.rating < 0 || prompt.rating > MAX_RATING) {
+      throw new RangeError(at + '.rating must be a whole number from 0 to ' + MAX_RATING +
+        ', received ' + JSON.stringify(prompt.rating) + '.');
+    }
+
+    if (!Array.isArray(prompt.notes)) {
+      throw new TypeError(at + '.notes must be an array, received ' + describe(prompt.notes) + '.');
+    }
+    prompt.notes.forEach(function (note, noteIndex) {
+      validateNote(note, at + '.notes[' + noteIndex + ']');
+    });
+
+    try {
+      validateMetadata(prompt.metadata);
+    } catch (err) {
+      throw new Error(at + '.metadata: ' + err.message);
+    }
+
+    return prompt;
+  }
+
+  function assertUniqueIds(prompts, subject) {
+    var seenAt = Object.create(null);
+
+    prompts.forEach(function (prompt, index) {
+      if (prompt.id in seenAt) {
+        throw new Error(subject + ' contains two prompts sharing the id "' + prompt.id +
+          '" (prompts[' + seenAt[prompt.id] + '] and prompts[' + index + ']).');
+      }
+      seenAt[prompt.id] = index;
+    });
+  }
+
+  /* ---------- Export ---------- */
+
+  function buildExport() {
+    var prompts = loadPrompts().sort(byCreatedAtDesc);
+
+    prompts.forEach(validatePromptRecord);
+    assertUniqueIds(prompts, 'The library');
+
+    return {
+      app: APP_ID,
+      schemaVersion: SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      statistics: statistics(prompts),
+      prompts: prompts
+    };
+  }
+
+  /* 2026-08-18T04:40:12.483Z -> 2026-08-18-044012, which sorts by name in a
+     downloads folder. */
+  function fileStamp(iso) {
+    return iso.slice(0, 19).replace('T', '-').replace(/:/g, '');
+  }
+
+  function downloadJson(data, filename) {
+    var url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)],
+      { type: 'application/json' }));
+    var link = document.createElement('a');
+
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    /* Revoked on the next tick — revoking synchronously can cancel the download
+       before the browser has read the blob. */
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 0);
+  }
+
+  function exportLibrary() {
+    try {
+      var data = buildExport();
+      if (!data.prompts.length) {
+        showStatus('Nothing to export yet — the library is empty.', 'info');
+        return;
+      }
+
+      downloadJson(data, APP_ID + '-' + fileStamp(data.exportedAt) + '.json');
+      showStatus('Exported ' + countOf(data.prompts.length, 'prompt') + '.', 'success');
+    } catch (err) {
+      showStatus('Export failed. ' + err.message, 'error');
+    }
+  }
+
+  /* ---------- Import ---------- */
+
+  function parseImport(text) {
+    var data;
+
+    try {
+      data = JSON.parse(text);
+    } catch (err) {
+      throw new Error('The file is not valid JSON. ' + err.message);
+    }
+
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new TypeError('Expected an export object at the top level, found ' +
+        (Array.isArray(data) ? 'an array' : describe(data)) + '.');
+    }
+
+    if (data.app !== undefined && data.app !== APP_ID) {
+      throw new Error('This file came from "' + data.app + '", not ' + APP_ID + '.');
+    }
+
+    validateSchemaVersion(data.schemaVersion);
+    validateIsoDate(data.exportedAt, 'exportedAt');
+
+    if (!Array.isArray(data.prompts)) {
+      throw new TypeError('prompts must be an array, received ' + describe(data.prompts) + '.');
+    }
+
+    data.prompts.forEach(validatePromptRecord);
+    assertUniqueIds(data.prompts, 'The file');
+
+    return {
+      schemaVersion: data.schemaVersion,
+      exportedAt: data.exportedAt,
+      prompts: data.prompts.map(normalize)
+    };
+  }
+
+  /* Older files are readable; newer ones are not, because this build cannot
+     know what a later version added. */
+  function validateSchemaVersion(version) {
+    if (typeof version !== 'number' || version !== Math.round(version) || version < 1) {
+      throw new TypeError('schemaVersion must be a whole number of at least 1, received ' +
+        JSON.stringify(version) + '.');
+    }
+    if (version > SCHEMA_VERSION) {
+      throw new RangeError('The file uses schema version ' + version + ', and this app reads up to ' +
+        SCHEMA_VERSION + '. Update the app before importing it.');
+    }
+  }
+
+  function idSet(prompts) {
+    var ids = Object.create(null);
+    prompts.forEach(function (prompt) {
+      ids[prompt.id] = true;
+    });
+    return ids;
+  }
+
+  function countConflicts(existing, incoming) {
+    var ids = idSet(existing);
+    return incoming.filter(function (prompt) {
+      return ids[prompt.id];
+    }).length;
+  }
+
+  /* Existing order is preserved and new prompts are appended; `render` sorts by
+     createdAt anyway, so this only decides which copy of a duplicate wins. */
+  function mergePrompts(existing, incoming, keepImported) {
+    var merged = existing.slice();
+    var indexById = Object.create(null);
+
+    merged.forEach(function (prompt, index) {
+      indexById[prompt.id] = index;
+    });
+
+    incoming.forEach(function (prompt) {
+      if (!(prompt.id in indexById)) {
+        indexById[prompt.id] = merged.push(prompt) - 1;
+      } else if (keepImported) {
+        merged[indexById[prompt.id]] = prompt;
+      }
+    });
+
+    return merged;
+  }
+
+  /* Writes the library, then reads it back. The previous contents are copied to
+     a backup key first and restored if any part of that fails, so a rejected
+     import cannot leave a half-written library behind. */
+  function applyImport(prompts) {
+    var backup = localStorage.getItem(STORAGE_KEY);
+
+    try {
+      localStorage.setItem(BACKUP_KEY, backup === null ? '[]' : backup);
+      savePrompts(prompts);
+
+      var written = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (!Array.isArray(written) || written.length !== prompts.length) {
+        throw new Error('The library did not read back as written.');
+      }
+    } catch (err) {
+      rollback(backup);
+      throw err;
+    }
+  }
+
+  function rollback(backup) {
+    try {
+      if (backup === null) localStorage.removeItem(STORAGE_KEY);
+      else localStorage.setItem(STORAGE_KEY, backup);
+    } catch (err) {
+      /* Restoring is the last resort; there is nothing further to fall back to,
+         and the caller still reports the original failure. */
+      console.error('Rollback failed: ' + err.message);
+    }
+  }
+
+  function readFile(file, onText, onError) {
+    var reader = new FileReader();
+
+    reader.onload = function () {
+      onText(String(reader.result));
+    };
+    reader.onerror = function () {
+      onError(new Error('Could not read "' + file.name + '".'));
+    };
+
+    reader.readAsText(file);
+  }
+
+  function importFromFile(file) {
+    readFile(file, function (text) {
+      var data;
+
+      try {
+        data = parseImport(text);
+      } catch (err) {
+        showStatus('Import failed, nothing changed. ' + err.message, 'error');
+        return;
+      }
+
+      if (!data.prompts.length) {
+        showStatus('"' + file.name + '" is a valid export but holds no prompts.', 'info');
+        return;
+      }
+
+      var existing = loadPrompts();
+      if (!existing.length) {
+        finishImport(data.prompts, 'replace', 0);
+        return;
+      }
+
+      var conflicts = countConflicts(existing, data.prompts);
+      askImportChoice(data.prompts.length, conflicts, function (choice) {
+        if (choice !== 'replace' && choice !== 'merge-keep-existing' &&
+            choice !== 'merge-keep-imported') {
+          showStatus('Import cancelled. Nothing changed.', 'info');
+          return;
+        }
+
+        var next = choice === 'replace'
+          ? data.prompts
+          : mergePrompts(existing, data.prompts, choice === 'merge-keep-imported');
+
+        finishImport(next, choice, conflicts);
+      });
+    }, function (err) {
+      showStatus('Import failed, nothing changed. ' + err.message, 'error');
+    });
+  }
+
+  function finishImport(prompts, choice, conflicts) {
+    try {
+      applyImport(prompts);
+    } catch (err) {
+      showStatus('Import failed and your library was restored unchanged. ' + err.message, 'error');
+      return;
+    }
+
+    render();
+    showStatus(describeImport(prompts.length, choice, conflicts), 'success');
+  }
+
+  function describeImport(total, choice, conflicts) {
+    var kept = countOf(conflicts, 'conflict');
+
+    if (choice === 'replace') {
+      return 'Replaced the library with ' + countOf(total, 'prompt') +
+        '. The previous library is saved under "' + BACKUP_KEY + '".';
+    }
+    if (!conflicts) {
+      return 'Merged. The library now holds ' + countOf(total, 'prompt') + '.';
+    }
+
+    return 'Merged, keeping ' + (choice === 'merge-keep-imported' ? 'the imported' : 'your') +
+      ' copy of ' + kept + '. The library now holds ' + countOf(total, 'prompt') + '.';
+  }
+
+  /* ---------- Import dialog ---------- */
+
+  /* Holds the callback waiting on the open dialog. One at a time: the dialog is
+     modal, so a second import cannot start before this one is answered. */
+  var pendingChoice = null;
+  var lastClicked = null;
+
+  function askImportChoice(incoming, conflicts, onChoice) {
+    dialogSummary.textContent = summarizeImport(incoming, conflicts);
+
+    /* With no duplicates there is only one way to merge, so the second button
+       has nothing to distinguish it. */
+    useTheirsBtn.hidden = conflicts === 0;
+    keepMineBtn.textContent = conflicts ? 'Merge, keep mine' : 'Merge';
+
+    pendingChoice = onChoice;
+    lastClicked = null;
+    importDialog.showModal();
+  }
+
+  /* Answers the open dialog exactly once — Escape can arrive as both `keydown`
+     and `cancel`, and clearing the callback first makes the second one a no-op. */
+  function resolveChoice(choice) {
+    var callback = pendingChoice;
+    pendingChoice = null;
+
+    if (importDialog.open) importDialog.close();
+    if (callback) callback(choice);
+  }
+
+  /* The choice is read from the form's submit event rather than the dialog's
+     `close` event: `close` does not reach listeners in every browser build,
+     while a submit handler is dispatched the same way everywhere. */
+  dialogForm.addEventListener('submit', function (event) {
+    var submitter = event.submitter || lastClicked;
+    resolveChoice(submitter ? submitter.value : 'cancel');
+  });
+
+  /* `event.submitter` is unavailable in older browsers, so remember the button
+     that was pressed. */
+  dialogForm.addEventListener('click', function (event) {
+    var button = event.target.closest && event.target.closest('.dialog-btn');
+    if (button) lastClicked = button;
+  });
+
+  importDialog.addEventListener('cancel', function () {
+    resolveChoice('cancel');
+  });
+
+  importDialog.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') resolveChoice('cancel');
+  });
+
+  function summarizeImport(incoming, conflicts) {
+    var opening = 'This file holds ' + countOf(incoming, 'prompt') + '. ';
+
+    if (!conflicts) {
+      return opening + 'Nothing in it clashes with what you already have.';
+    }
+
+    return opening + countOf(conflicts, 'of them') +
+      ' already in your library under the same id. Choose which copy to keep.';
+  }
+
+  function countOf(count, noun) {
+    if (noun === 'of them') return count + (count === 1 ? ' is' : ' are');
+    return count + ' ' + noun + (count === 1 ? '' : 's');
+  }
+
+  /* ---------- Status line ---------- */
+
+  function showStatus(message, kind) {
+    statusEl.textContent = message;
+    statusEl.className = 'library-status status-' + kind;
+    statusEl.hidden = !message;
+  }
+
+  exportBtn.addEventListener('click', exportLibrary);
+
+  importBtn.addEventListener('click', function () {
+    importFile.click();
+  });
+
+  importFile.addEventListener('change', function () {
+    var file = importFile.files && importFile.files[0];
+
+    /* Cleared so that picking the same file twice in a row still fires a
+       change event. The File reference above stays valid. */
+    importFile.value = '';
+    if (file) importFromFile(file);
+  });
+
   /* ---------- Theme ---------- */
 
   function applyTheme(theme) {
@@ -757,6 +1245,14 @@
     trackModel: trackModel,
     updateTimestamps: updateTimestamps,
     estimateTokens: estimateTokens
+  };
+
+  window.promptLibrary = {
+    buildExport: buildExport,
+    parseImport: parseImport,
+    statistics: statistics,
+    mergePrompts: mergePrompts,
+    SCHEMA_VERSION: SCHEMA_VERSION
   };
 
   initTheme();

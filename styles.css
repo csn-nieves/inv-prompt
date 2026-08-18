@@ -319,6 +319,128 @@ body {
   border-color: var(--danger-hover-bg);
 }
 
+/* ---------- Toolbar, status and dialog ---------- */
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.toolbar-btn {
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease;
+}
+
+.toolbar-btn:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.library-status {
+  margin: 0 0 16px;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.library-status[hidden] { display: none; }
+
+.status-success {
+  border-color: var(--confidence-high-border);
+  background: var(--confidence-high-bg);
+  color: var(--confidence-high-text);
+}
+
+.status-error {
+  border-color: var(--confidence-low-border);
+  background: var(--confidence-low-bg);
+  color: var(--confidence-low-text);
+}
+
+.dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.dialog::backdrop { background: rgba(0, 0, 0, .45); }
+
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+}
+
+.dialog-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.dialog-summary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dialog-btn {
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+
+.dialog-btn:hover {
+  border-color: var(--text);
+  background: var(--surface);
+}
+
+.dialog-btn[hidden] { display: none; }
+
+.dialog-btn-quiet {
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
 /* ---------- Metadata ---------- */
 .meta {
   display: grid;

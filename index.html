@@ -38,11 +38,32 @@
     </section>
 
     <section class="panel" aria-labelledby="list-heading">
-      <h2 id="list-heading" class="panel-title">Saved Prompts</h2>
+      <div class="panel-head">
+        <h2 id="list-heading" class="panel-title">Saved Prompts</h2>
+        <div class="toolbar">
+          <button id="export-btn" class="toolbar-btn" type="button">Export</button>
+          <button id="import-btn" class="toolbar-btn" type="button">Import</button>
+          <input type="file" id="import-file" accept="application/json,.json" hidden />
+        </div>
+      </div>
+      <p id="library-status" class="library-status" role="status" hidden></p>
       <p id="empty-state" class="empty-state">No prompts saved yet.</p>
       <div id="prompt-list" class="prompt-list"></div>
     </section>
   </main>
+
+  <dialog id="import-dialog" class="dialog" aria-labelledby="import-dialog-title">
+    <form method="dialog" class="dialog-form" id="import-dialog-form">
+      <h2 id="import-dialog-title" class="dialog-title">Import prompts</h2>
+      <p id="import-dialog-summary" class="dialog-summary"></p>
+      <div class="dialog-actions">
+        <button type="submit" value="merge-keep-existing" id="merge-keep-existing" class="dialog-btn">Merge</button>
+        <button type="submit" value="merge-keep-imported" id="merge-keep-imported" class="dialog-btn">Merge, use imported</button>
+        <button type="submit" value="replace" class="dialog-btn">Replace all</button>
+        <button type="submit" value="cancel" class="dialog-btn dialog-btn-quiet">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="script.js"></script>
 </body>
