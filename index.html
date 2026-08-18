@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -12,10 +13,11 @@
         var saved = localStorage.getItem('promptLibrary.theme');
         var dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
         document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-      } catch (e) {}
+      } catch (e) { }
     })();
   </script>
 </head>
+
 <body>
   <header class="app-header">
     <div class="header-inner">
@@ -30,15 +32,18 @@
         </span>
         <div>
           <h1>Prompt Library</h1>
+          <h2>Standard Prompt</h2>
           <p class="brand-sub">Save, browse, and reuse your best prompts</p>
         </div>
       </div>
       <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Switch color theme">
         <span class="theme-icon" aria-hidden="true">
-          <svg class="icon-moon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.25">
+          <svg class="icon-moon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
+            stroke-width="1.25">
             <path d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5Z" />
           </svg>
-          <svg class="icon-sun" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.25">
+          <svg class="icon-sun" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
+            stroke-width="1.25">
             <circle cx="8" cy="8" r="3.25" />
             <line x1="8" y1="0.75" x2="8" y2="2.5" />
             <line x1="8" y1="13.5" x2="8" y2="15.25" />
@@ -58,15 +63,8 @@
       <form id="prompt-form" novalidate>
         <div class="field">
           <label for="prompt-title">Title</label>
-          <input
-            type="text"
-            id="prompt-title"
-            name="title"
-            placeholder="e.g. Blog Idea Generator"
-            maxlength="120"
-            autocomplete="off"
-            required
-          />
+          <input type="text" id="prompt-title" name="title" placeholder="e.g. Blog Idea Generator" maxlength="120"
+            autocomplete="off" required />
         </div>
 
         <div class="field">
@@ -74,13 +72,8 @@
             <label for="prompt-content">Prompt</label>
             <span class="char-count" id="content-count">0</span>
           </div>
-          <textarea
-            id="prompt-content"
-            name="content"
-            placeholder="Write the full prompt here…"
-            rows="9"
-            required
-          ></textarea>
+          <textarea id="prompt-content" name="content" placeholder="Write the full prompt here…" rows="9"
+            required></textarea>
         </div>
 
         <p id="form-error" class="form-error" role="alert" hidden></p>
@@ -137,4 +130,5 @@
 
   <script src="script.js"></script>
 </body>
+
 </html>
