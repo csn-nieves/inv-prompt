@@ -14,6 +14,15 @@
   --danger-hover-text: #ffffff;
   --star-active: #1a1a1a;
   --star-inactive: #b4b4b4;
+  --confidence-high-bg: #e7f4ea;
+  --confidence-high-border: #9dcfab;
+  --confidence-high-text: #1e5b30;
+  --confidence-medium-bg: #fdf3dc;
+  --confidence-medium-border: #e0c176;
+  --confidence-medium-text: #6b4e0c;
+  --confidence-low-bg: #fbe9e7;
+  --confidence-low-border: #dfa19a;
+  --confidence-low-text: #7a2a20;
   --shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 4px 12px rgba(0, 0, 0, .04);
   --radius: 8px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -34,6 +43,15 @@
   --danger-hover-text: #101011;
   --star-active: #ededed;
   --star-inactive: #5c5c5c;
+  --confidence-high-bg: #13291a;
+  --confidence-high-border: #2f6b41;
+  --confidence-high-text: #85d69c;
+  --confidence-medium-bg: #2c2411;
+  --confidence-medium-border: #6f5a1f;
+  --confidence-medium-text: #e0c176;
+  --confidence-low-bg: #2e1613;
+  --confidence-low-border: #7a3a32;
+  --confidence-low-text: #ec9d93;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 12px rgba(0, 0, 0, .3);
 }
 
@@ -194,6 +212,18 @@ body {
 .btn-primary:hover { opacity: .85; }
 .btn-primary:active { opacity: .7; }
 
+.form-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--confidence-low-text);
+  background: var(--confidence-low-bg);
+  border: 1px solid var(--confidence-low-border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+
+.form-error[hidden] { display: none; }
+
 /* ---------- Rating ---------- */
 .rating {
   display: flex;
@@ -287,6 +317,78 @@ body {
   background: var(--danger-hover-bg);
   color: var(--danger-hover-text);
   border-color: var(--danger-hover-bg);
+}
+
+/* ---------- Metadata ---------- */
+.meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 11px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.meta-label {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.meta-value {
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.meta-model { font-weight: 600; }
+
+/* Wraps between the range and the confidence word rather than overflowing a
+   narrow card; the range itself stays on one line. */
+.token-badge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--confidence-high-border);
+  border-radius: 999px;
+  background: var(--confidence-high-bg);
+  color: var(--confidence-high-text);
+}
+
+.token-range { white-space: nowrap; }
+
+.token-confidence {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  opacity: .8;
+}
+
+.token-medium {
+  border-color: var(--confidence-medium-border);
+  background: var(--confidence-medium-bg);
+  color: var(--confidence-medium-text);
+}
+
+.token-low {
+  border-color: var(--confidence-low-border);
+  background: var(--confidence-low-bg);
+  color: var(--confidence-low-text);
+}
+
+/* Spans both columns — there is no label to pair it with. */
+.meta-error {
+  grid-column: 1 / -1;
+  color: var(--confidence-low-text);
 }
 
 /* ---------- Notes ---------- */

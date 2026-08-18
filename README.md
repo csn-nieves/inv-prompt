@@ -22,6 +22,11 @@ Nothing to install.
 | ------------ | ---------------------------------------------------------- |
 | `index.html` | Markup, inline SVG icons, and the card `<template>`        |
 | `styles.css` | Grayscale design tokens with a light and dark theme        |
-| `script.js`  | Storage, rendering, validation, delete, copy, theme toggle |
+| `script.js`  | Storage, metadata, rendering, validation, delete, copy, theme toggle |
+
+Each prompt carries metadata — the model it was written for, created and updated timestamps, and a
+token estimate whose confidence is color coded on the card. Prompts saved before metadata existed read
+back with it derived from their id, so nothing needs migrating. `window.promptMetadata` exposes
+`trackModel`, `updateTimestamps` and `estimateTokens` for use from the console.
 
 Prompts live under the `promptLibrary.prompts.v1` key and the theme preference under `promptLibrary.theme`. It all stays in the browser, so clearing site data clears the library.

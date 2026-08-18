@@ -28,6 +28,11 @@
           <label for="prompt-content">Prompt</label>
           <textarea id="prompt-content" name="content" rows="6" placeholder="Write your prompt here..." required></textarea>
         </div>
+        <div class="field">
+          <label for="prompt-model">Model</label>
+          <input type="text" id="prompt-model" name="model" maxlength="100" placeholder="e.g. claude-opus-5" />
+        </div>
+        <p id="form-error" class="form-error" role="alert" hidden></p>
         <button type="submit" class="btn-primary">Save Prompt</button>
       </form>
     </section>
