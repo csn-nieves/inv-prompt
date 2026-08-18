@@ -1,273 +1,132 @@
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'promptLibrary.prompts.v1';
-  const THEME_KEY = 'promptLibrary.theme';
+  var STORAGE_KEY = 'prompts';
+  var THEME_KEY = 'theme';
+  var PREVIEW_WORDS = 12;
 
-  const form = document.getElementById('prompt-form');
-  const titleInput = document.getElementById('prompt-title');
-  const contentInput = document.getElementById('prompt-content');
-  const contentCount = document.getElementById('content-count');
-  const errorEl = document.getElementById('form-error');
-  const listEl = document.getElementById('prompt-list');
-  const emptyEl = document.getElementById('empty-state');
-  const countEl = document.getElementById('prompt-count');
-  const template = document.getElementById('prompt-card-template');
-  const themeToggle = document.getElementById('theme-toggle');
-  const themeLabel = themeToggle.querySelector('.theme-label');
-  const toastEl = document.getElementById('toast');
+  var form = document.getElementById('prompt-form');
+  var titleInput = document.getElementById('prompt-title');
+  var contentInput = document.getElementById('prompt-content');
+  var listEl = document.getElementById('prompt-list');
+  var emptyEl = document.getElementById('empty-state');
+  var themeToggle = document.getElementById('theme-toggle');
 
   /* ---------- Storage ---------- */
 
   function loadPrompts() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return [];
-      const data = JSON.parse(raw);
-      if (!Array.isArray(data)) return [];
-      return data.filter(
-        (p) => p && typeof p.id === 'string' && typeof p.title === 'string' && typeof p.content === 'string'
-      );
+      var raw = localStorage.getItem(STORAGE_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch (err) {
-      console.warn('Could not read saved prompts:', err);
       return [];
     }
   }
 
   function savePrompts(prompts) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(prompts));
-      return true;
-    } catch (err) {
-      console.error('Could not save prompts:', err);
-      showError('Storage is full or unavailable — this prompt was not saved.');
-      return false;
-    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(prompts));
   }
-
-  let prompts = loadPrompts();
 
   /* ---------- Rendering ---------- */
 
-  function formatDate(iso) {
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
-    });
+  function makePreview(content) {
+    var words = content.trim().split(/\s+/);
+    if (words.length <= PREVIEW_WORDS) return words.join(' ');
+    return words.slice(0, PREVIEW_WORDS).join(' ') + '...';
   }
 
   function createCard(prompt) {
-    const card = template.content.firstElementChild.cloneNode(true);
-    card.dataset.id = prompt.id;
+    var card = document.createElement('article');
+    card.className = 'prompt-card';
 
-    card.querySelector('.card-title').textContent = prompt.title;
-    card.querySelector('.card-content').textContent = prompt.content;
+    var title = document.createElement('h3');
+    title.textContent = prompt.title;
 
-    const time = card.querySelector('.card-date');
-    time.textContent = formatDate(prompt.createdAt);
-    time.dateTime = prompt.createdAt;
+    var preview = document.createElement('p');
+    preview.className = 'prompt-preview';
+    preview.textContent = makePreview(prompt.content);
 
-    card.querySelector('[data-action="delete"]').setAttribute(
-      'aria-label',
-      `Delete prompt: ${prompt.title}`
-    );
+    var deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'delete-btn';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', function () {
+      deletePrompt(prompt.id);
+    });
 
+    card.appendChild(title);
+    card.appendChild(preview);
+    card.appendChild(deleteBtn);
     return card;
   }
 
   function render() {
-    listEl.replaceChildren(...prompts.map(createCard));
+    var prompts = loadPrompts();
+    listEl.innerHTML = '';
+    emptyEl.hidden = prompts.length > 0;
 
-    const hasPrompts = prompts.length > 0;
-    emptyEl.hidden = hasPrompts;
-    listEl.hidden = !hasPrompts;
-    countEl.textContent = String(prompts.length);
-  }
-
-  /* ---------- Feedback ---------- */
-
-  let toastTimer;
-  function showToast(message) {
-    clearTimeout(toastTimer);
-    toastEl.textContent = message;
-    toastEl.hidden = false;
-    requestAnimationFrame(() => toastEl.classList.add('is-visible'));
-    toastTimer = setTimeout(() => {
-      toastEl.classList.remove('is-visible');
-      setTimeout(() => { toastEl.hidden = true; }, 200);
-    }, 2200);
-  }
-
-  function showError(message) {
-    errorEl.textContent = message;
-    errorEl.hidden = false;
-  }
-
-  function clearError() {
-    errorEl.textContent = '';
-    errorEl.hidden = true;
-  }
-
-  function newId() {
-    if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-    return `p_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-  }
-
-  /* ---------- Create ---------- */
-
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    clearError();
-
-    const title = titleInput.value.trim();
-    const content = contentInput.value.trim();
-
-    if (!title && !content) {
-      showError('Add a title and prompt content before saving.');
-      titleInput.focus();
-      return;
-    }
-    if (!title) {
-      showError('Give your prompt a title.');
-      titleInput.focus();
-      return;
-    }
-    if (!content) {
-      showError('Prompt content cannot be empty.');
-      contentInput.focus();
-      return;
-    }
-
-    const prompt = {
-      id: newId(),
-      title,
-      content,
-      createdAt: new Date().toISOString()
-    };
-
-    const previous = prompts;
-    prompts = [prompt, ...prompts];
-
-    if (!savePrompts(prompts)) {
-      prompts = previous;
-      return;
-    }
-
-    render();
-    form.reset();
-    updateCharCount();
-    titleInput.focus();
-    showToast('Prompt saved');
-  });
-
-  form.addEventListener('reset', () => {
-    clearError();
-    setTimeout(updateCharCount, 0);
-  });
-
-  /* ---------- Delete & copy ---------- */
-
-  listEl.addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-action]');
-    if (!button) return;
-
-    const card = button.closest('.card');
-    const id = card && card.dataset.id;
-    const prompt = prompts.find((p) => p.id === id);
-    if (!prompt) return;
-
-    if (button.dataset.action === 'delete') {
-      if (!window.confirm(`Delete "${prompt.title}"? This cannot be undone.`)) return;
-
-      const previous = prompts;
-      prompts = prompts.filter((p) => p.id !== id);
-
-      if (!savePrompts(prompts)) {
-        prompts = previous;
-        return;
-      }
-
-      card.classList.add('is-removing');
-      setTimeout(render, 180);
-      showToast('Prompt deleted');
-      return;
-    }
-
-    if (button.dataset.action === 'copy') {
-      copyText(prompt.content).then(
-        () => showToast('Copied to clipboard'),
-        () => showToast('Copy failed')
-      );
-    }
-  });
-
-  function copyText(text) {
-    if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(text);
-    }
-    return new Promise((resolve, reject) => {
-      const area = document.createElement('textarea');
-      area.value = text;
-      area.setAttribute('readonly', '');
-      area.style.position = 'fixed';
-      area.style.opacity = '0';
-      document.body.appendChild(area);
-      area.select();
-      const ok = document.execCommand('copy');
-      document.body.removeChild(area);
-      ok ? resolve() : reject(new Error('copy command failed'));
+    prompts.forEach(function (prompt) {
+      listEl.appendChild(createCard(prompt));
     });
   }
 
-  /* ---------- Character count ---------- */
+  /* ---------- Actions ---------- */
 
-  function updateCharCount() {
-    const length = contentInput.value.length;
-    contentCount.textContent = length === 0 ? '0' : `${length} characters`;
+  function addPrompt(title, content) {
+    var prompts = loadPrompts();
+    prompts.unshift({
+      id: String(Date.now()) + String(Math.random()).slice(2, 8),
+      title: title,
+      content: content
+    });
+    savePrompts(prompts);
+    render();
   }
 
-  contentInput.addEventListener('input', updateCharCount);
+  function deletePrompt(id) {
+    var prompts = loadPrompts().filter(function (prompt) {
+      return prompt.id !== id;
+    });
+    savePrompts(prompts);
+    render();
+  }
+
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    var title = titleInput.value.trim();
+    var content = contentInput.value.trim();
+    if (!title || !content) return;
+
+    addPrompt(title, content);
+    form.reset();
+    titleInput.focus();
+  });
 
   /* ---------- Theme ---------- */
 
   function applyTheme(theme) {
-    document.documentElement.dataset.theme = theme;
-    themeLabel.textContent = theme === 'dark' ? 'Light' : 'Dark';
-    themeToggle.setAttribute(
-      'aria-label',
-      theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'
-    );
+    document.documentElement.setAttribute('data-theme', theme);
+    themeToggle.textContent = theme === 'dark' ? 'Light' : 'Dark';
+    localStorage.setItem(THEME_KEY, theme);
   }
 
   function initTheme() {
-    let stored = null;
-    try {
-      stored = localStorage.getItem(THEME_KEY);
-    } catch (err) {
-      console.warn('Theme preference unavailable:', err);
+    var saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'dark' || saved === 'light') {
+      applyTheme(saved);
+      return;
     }
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    applyTheme(stored === 'dark' || stored === 'light' ? stored : prefersDark ? 'dark' : 'light');
+    var prefersDark = window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(prefersDark ? 'dark' : 'light');
   }
 
-  themeToggle.addEventListener('click', () => {
-    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
-    try {
-      localStorage.setItem(THEME_KEY, next);
-    } catch (err) {
-      console.warn('Could not persist theme:', err);
-    }
+  themeToggle.addEventListener('click', function () {
+    var current = document.documentElement.getAttribute('data-theme');
+    applyTheme(current === 'dark' ? 'light' : 'dark');
   });
 
-  /* ---------- Init ---------- */
-
   initTheme();
-  updateCharCount();
   render();
 })();
